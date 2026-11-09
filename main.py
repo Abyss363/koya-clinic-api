@@ -26,6 +26,10 @@ class NewBooking(BaseModel):
     name: str
     email: str
 
+@app.get("/")
+def root():
+    return {"status": "ok"}
+
 @app.get("/slots")
 def list_slots():
     return {"slots": slots}
