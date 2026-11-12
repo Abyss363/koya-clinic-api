@@ -22,4 +22,8 @@ with psycopg.connect(url) as conn:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
     """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS one_confirmed_per_slot
+        ON bookings (slot_id) WHERE status = 'confirmed'
+    """)
     print("tables ready")

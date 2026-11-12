@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Clinic bookings</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 680px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.5;
+        }
+
+        label {
+            display: block;
+            margin-top: .75rem;
+            font-weight: 600;
+        }
+
+        input {
+            width: 100%;
+            padding: .5rem;
+            margin-top: .25rem;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: .5rem 1rem;
+            margin-top: .75rem;
+            cursor: pointer;
+        }
+
+        .slot {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: .75rem 1rem;
+            margin-top: .5rem;
+        }
+
+        .slot.taken {
+            opacity: .5;
+        }
+
+        .error {
+            color: #b00020;
+            margin-top: .75rem;
+        }
+
+        .confirm {
+            border: 2px solid #2e7d32;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+
+        [hidden] {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Book an appointment</h1>
+
+    <label for="key">API key</label>
+    <input id="key" type="password" autocomplete="off">
+    <button id="load">Show available slots</button>
+
+    <p id="error" class="error" role="alert" hidden></p>
+
+    <h2>Slots</h2>
+    <div id="slots"></div>
+
+    <section id="form-box" hidden>
+        <h2>Your details</h2>
+        <p id="chosen"></p>
+        <label for="name">Name</label>
+        <input id="name" autocomplete="name">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email">
+        <button id="submit">Confirm booking</button>
+    </section>
+
+    <section id="confirmation" class="confirm" hidden>
+        <h2>Booking confirmed</h2>
+        <p id="confirm-details"></p>
+    </section>
+
+    <script>
+        const keyInput = document.getElementById("key");
+        const errorBox = document.getElementById("error");
+        const slotsBox = document.getElementById("slots");
+        const formBox = document.getElementById("form-box");
+        const confirmBox = document.getElementById("confirmation");
+        let selected = null;
+
+        try { keyInput.value = localStorage.getItem("apiKey") || ""; } catch (e) { }
+
+        function showError(msg) {
+            errorBox.textContent = msg;
+            errorBox.hidden = !msg;
+            if (msg) errorBox.scrollIntoView({ block: "nearest" });
+        }
+
+        function when(iso) {
+            return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+        }
+
+        function headers() {
+            return { "Content-Type": "application/json", "X-API-Key": keyInput.value.trim() };
+        }
+
+        async function loadSlots() {
+            showError("");
+            try { localStorage.setItem("apiKey", keyInput.value.trim()); } catch (e) { }
+            try {
+                const res = await fetch("/slots", { headers: headers() });
+                const data = await res.json();
+                if (!res.ok) { showError(data.error || "Could not load slots"); return; }
+                renderSlots(data.slots);
+            } catch (e) {
+                showError("Network problem. Please try again.");
+            }
+        }
+
+        function renderSlots(slots) {
+            slotsBox.innerHTML = "";
+            if (slots.length === 0) {
+                slotsBox.textContent = "No slots yet.";
+                return;
+            }
+            for (const slot of slots) {
+                const started = new Date(slot.start) <= new Date();
+                const open = slot.available && !started;
+
+                const row = document.createElement("div");
+                row.className = "slot" + (open ? "" : " taken");
+
+                const text = document.createElement("span");
+                text.textContent = slot.provider + " | " + when(slot.start) + " to " + when(slot.end);
+                row.appendChild(text);
+
+                if (open) {
+                    const btn = document.createElement("button");
+                    btn.textContent = "Book";
+                    btn.addEventListener("click", () => choose(slot));
+                    row.appendChild(btn);
+                } else {
+                    const tag = document.createElement("span");
+                    tag.textContent = started ? "Already started" : "Booked";
+                    row.appendChild(tag);
+                }
+                slotsBox.appendChild(row);
+            }
+        }
+
+        function choose(slot) {
+            selected = slot;
+            confirmBox.hidden = true;
+            showError("");
+            document.getElementById("chosen").textContent =
+                "Selected: " + slot.provider + ", " + when(slot.start);
+            formBox.hidden = false;
+            document.getElementById("name").focus();
+        }
+
+        async function book() {
+            showError("");
+            const body = {
+                slot_id: selected.id,
+                name: document.getElementById("name").value,
+                email: document.getElementById("email").value,
+            };
+            try {
+                const res = await fetch("/bookings", { method: "POST", headers: headers(), body: JSON.stringify(body) });
+                const data = await res.json();
+                if (!res.ok) { await loadSlots(); showError(data.error || "Booking failed"); return; }
+
+                document.getElementById("confirm-details").textContent =
+                    "Booking ID: " + data.id + " | " + selected.provider + ", " + when(selected.start) +
+                    " | " + data.name + " (" + data.email + ") | Status: " + data.status;
+                confirmBox.hidden = false;
+                formBox.hidden = true;
+                selected = null;
+                await loadSlots();
+            } catch (e) {
+                showError("Network problem. Please try again.");
+            }
+        }
+
+        document.getElementById("load").addEventListener("click", loadSlots);
+        document.getElementById("submit").addEventListener("click", book);
+        if (keyInput.value) loadSlots();
+    </script>
+</body>
+
+</html>
